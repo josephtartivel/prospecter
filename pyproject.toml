@@ -46,11 +46,20 @@ packages = ["src/prospecter"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# `_handoff/` contains drop-in code that sessions adapt and `git rm` once
+# consumed. It's staging, not production. Linting it is theater.
+extend-exclude = ["_handoff"]
 
 [tool.ruff.lint]
 # Conservative defaults. Add rules deliberately, not by copying every recipe online.
 select = ["E", "F", "I", "B", "UP", "SIM"]
-ignore = ["E501"]  # line length is enforced by formatter, not linter
+ignore = [
+    "E501",  # line length is enforced by formatter, not linter
+    "B008",  # typer.Option(...) and typer.Argument(...) in defaults is THE
+             # documented typer pattern — it's how the CLI structure gets
+             # parsed at import time. Same applies to FastAPI Depends() and
+             # pytest fixture(). Industry-standard ignore for typer projects.
+]
 
 [tool.pyright]
 include = ["src", "eval", "tests"]
