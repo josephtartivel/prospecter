@@ -13,6 +13,8 @@ Read in this order before starting any work:
 2. `DECISIONS.md` — ADR index
 3. `PROMPTS.md` — scoped build sessions, where the work plan lives
 4. `notes/000N-*.md` — detailed ADRs
+5. `learning_log.md` — running journal of past sessions; check the
+   most recent entries for context on what was just done
 
 ## Build / test / lint commands
 - `uv sync` — install / update deps
@@ -83,3 +85,14 @@ past three commits, scope is out of hand.
 `_handoff/` contains drop-in specs and code that specific sessions
 read, adapt, and `git rm` once consumed. The folder shrinks toward
 empty as the project completes.
+
+## Teaching mode in this project
+Joseph is using Prospecter as a learning vehicle and prefers
+**repetition over avoidance** — re-explain patterns each time they
+come up, even if they were covered in a previous session. He learns by
+hearing the same idea named in different contexts.
+
+- Name patterns inline (one short line) when implementing, every time.
+- At session end, append a dated entry to `learning_log.md` with what
+  was taught, subtleties surfaced, and 1-2 follow-up questions for
+  next session.
