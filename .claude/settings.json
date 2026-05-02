@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(data/sirene/*)",
+      "Edit(eval/labels/*)",
+      "Edit(eval/labels_bootstrap/*)",
+      "Edit(eval/reports/*)",
+      "Bash(uv publish *)",
+      "Bash(rm -rf data/*)",
+      "Bash(rm -rf eval/*)"
+    ],
+    "ask": [
+      "Bash(uv run python -m eval.bootstrap_labels *)",
+      "Bash(uv run python -m eval.runner *)",
+      "Bash(git push *)"
+    ],
+    "allow": [
+      "Bash(uv run pytest*)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run pyright*)",
+      "Bash(uv run prospecter *)",
+      "Bash(uv sync*)",
+      "Bash(./scripts/fetch_sirene.sh)",
+      "Read(src/**/*.py)",
+      "Read(eval/**/*.py)",
+      "Read(tests/**/*.py)",
+      "Read(prompts/**/*.md)",
+      "Read(notes/**/*.md)",
+      "Read(_handoff/**/*)"
+    ]
+  }
+}
