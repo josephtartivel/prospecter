@@ -1,35 +1,137 @@
 """Search agent — ICP → list[Company] via DuckDB.
 
-Deterministic, no LLM. The agent is a thin function that translates ICP
-fields into a parameterized DuckDB query, runs it against the SIRENE
-views, and returns up to `max_results` Company rows.
+Deterministic, no LLM. Translates the structured ICP into a parameterised
+DuckDB query against the ``companies`` view installed by ``SireneStore``,
+sorts by ``creation_date DESC``, and caps the result list at
+``max_results``.
 
-Skeleton — see SPEC §7 for the contract. Implement in the second build
-session (PROMPTS.md, session 2).
+See SPEC §7 for the contract.
 """
 
 from __future__ import annotations
 
 import logging
 
-from prospecter.schemas import Company, ICP
+from prospecter.schemas import ICP, Company
 from prospecter.tools.duckdb_tool import SireneStore
 
 log = logging.getLogger(__name__)
 
 
-def search(icp: ICP, *, store: SireneStore, max_results: int = 1000) -> list[Company]:
-    """Return up to `max_results` candidates matching the ICP.
+# The SELECT list matches the field order of ``Company`` so we can pass
+# the cursor's row tuple straight into the model. Tranche bounds are
+# carried on the view but never selected — they exist only to power the
+# headcount-overlap WHERE clause.
+_SELECT = """
+SELECT
+    siren,
+    siret_main,
+    name,
+    naf_code,
+    headcount_tranche,
+    headcount_label,
+    region_code,
+    department_code,
+    postal_code,
+    commune,
+    creation_date,
+    is_active
+FROM companies
+"""
 
-    Sorted by `creation_date DESC` so newer companies surface first.
-    Truncates with a logged warning if the unbounded count exceeds
-    `max_results`.
 
-    TODO(session-2):
-      - Build the WHERE clause incrementally from non-empty ICP fields.
-      - Project only the columns Company needs.
-      - Map SIRENE tranche codes to the (min, max) pair so headcount filters
-        work as expected.
-      - Use parameterized queries (DuckDB Python supports `$param` style).
+def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
+    """Compose the WHERE-clause fragments and the parameter dict.
+
+    Each fragment is independently appendable; only fields the user set
+    on the ICP contribute. Headcount uses tranche overlap rather than
+    strict containment: a tranche row qualifies if its [min, max] window
+    intersects the ICP's [min, max] window (with NULLs treated as the
+    open ends of the half-line).
     """
-    raise NotImplementedError("implement in session 2 (see PROMPTS.md)")
+    clauses: list[str] = []
+    params: dict[str, object] = {}
+
+    if icp.naf_codes:
+        clauses.append("naf_code IN (SELECT UNNEST($naf_codes))")
+        params["naf_codes"] = list(icp.naf_codes)
+
+    # Tranche overlap: tranche.max >= icp.min AND tranche.min <= icp.max.
+    # NULL tranche_max means "10000+" (open right edge), so the >=
+    # comparison passes by treating NULL as +inf via COALESCE.
+    if icp.headcount_min is not None:
+        clauses.append("COALESCE(tranche_max, 2147483647) >= $headcount_min")
+        params["headcount_min"] = icp.headcount_min
+    if icp.headcount_max is not None:
+        clauses.append("COALESCE(tranche_min, 0) <= $headcount_max")
+        params["headcount_max"] = icp.headcount_max
+
+    if icp.region_code is not None:
+        clauses.append("region_code = $region_code")
+        params["region_code"] = icp.region_code
+
+    if icp.department_codes:
+        clauses.append("department_code IN (SELECT UNNEST($department_codes))")
+        params["department_codes"] = list(icp.department_codes)
+
+    if icp.postal_codes:
+        clauses.append("postal_code IN (SELECT UNNEST($postal_codes))")
+        params["postal_codes"] = list(icp.postal_codes)
+
+    # Age filters compare against ``current_date`` rather than a fixed
+    # epoch so re-runs against the same data are still date-relative.
+    if icp.age_max_months is not None:
+        clauses.append("creation_date >= (current_date - INTERVAL ($age_max_months) MONTH)")
+        params["age_max_months"] = icp.age_max_months
+    if icp.age_min_months is not None:
+        clauses.append("creation_date <= (current_date - INTERVAL ($age_min_months) MONTH)")
+        params["age_min_months"] = icp.age_min_months
+
+    if icp.require_active:
+        clauses.append("is_active = TRUE")
+
+    return clauses, params
+
+
+def search(icp: ICP, *, store: SireneStore, max_results: int = 1000) -> list[Company]:
+    """Return up to ``max_results`` candidates matching ``icp``.
+
+    Sorted by ``creation_date DESC`` so newer companies surface first.
+    If the unbounded result count exceeds ``max_results``, the list is
+    truncated and a warning is logged.
+    """
+    con = store.connect()
+    clauses, params = _build_where(icp)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+
+    # Fetch one extra row so we can detect (and log) silent truncation
+    # without a separate COUNT(*) round-trip.
+    params["limit_plus_one"] = max_results + 1
+    sql = f"{_SELECT} {where} ORDER BY creation_date DESC NULLS LAST LIMIT $limit_plus_one"
+    rows = con.execute(sql, params).fetchall()
+
+    truncated = len(rows) > max_results
+    if truncated:
+        rows = rows[:max_results]
+        log.warning(
+            "search: result truncated at max_results=%d; broaden filters or raise the cap",
+            max_results,
+        )
+
+    return [
+        Company(
+            siren=r[0],
+            siret_main=r[1],
+            name=r[2],
+            naf_code=r[3],
+            headcount_tranche=r[4],
+            headcount_label=r[5],
+            region_code=r[6],
+            department_code=r[7],
+            postal_code=r[8],
+            commune=r[9],
+            creation_date=r[10],
+            is_active=r[11],
+        )
+        for r in rows
+    ]
