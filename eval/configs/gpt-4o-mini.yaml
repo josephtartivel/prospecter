@@ -1,0 +1,6 @@
+name: gpt-4o-mini
+description: OpenAI cheap-tier model — provider-portability ablation.
+parser_model: gpt-4o-mini
+scorer_model: gpt-4o-mini
+concurrency: 8
+top_n: 50

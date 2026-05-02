@@ -1,0 +1,5 @@
+{"id": "icp-001", "nl": "Mid-size French restaurants in Paris, 10 to 49 employees, opened in the last 5 years.", "difficulty": "easy", "notes": "Single sector, single region, single tranche range, single age window."}
+{"id": "icp-002", "nl": "Early-stage IT consultancies in Lyon and the surrounding department, less than 50 people.", "difficulty": "easy", "notes": "Two NAF codes (62.02A/62.02B), Lyon = department 69, region 84."}
+{"id": "icp-003", "nl": "Mid-size restaurants in Paris and the inner suburbs (departments 75, 92, 93, 94), opened in the last 5 years.", "difficulty": "medium", "notes": "Multi-department within one region; tests department-list handling."}
+{"id": "icp-004", "nl": "French SaaS startups outside Paris, between 10 and 100 employees, founded after 2021.", "difficulty": "medium", "notes": "Negation in the location filter; SaaS → NAF 62.01Z is the canonical pick."}
+{"id": "icp-005", "nl": "Boutique management consulting firms, 10–30 people, with a recent regional presence outside the Paris region.", "difficulty": "hard", "notes": "Soft language (“boutique”, “recent”). NAF 70.22Z; explicitly not region 11."}

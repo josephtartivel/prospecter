@@ -1,0 +1,6 @@
+name: deepseek-chat
+description: DeepSeek's chat model. The cheapest tested configuration.
+parser_model: deepseek/deepseek-chat
+scorer_model: deepseek/deepseek-chat
+concurrency: 4
+top_n: 50

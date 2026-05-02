@@ -1,0 +1,6 @@
+name: sonnet
+description: Premium Anthropic configuration; the upper bound of this stack.
+parser_model: claude-sonnet-4-5
+scorer_model: claude-sonnet-4-5
+concurrency: 4
+top_n: 50
