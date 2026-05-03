@@ -28,6 +28,7 @@ app = [
 ]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
     "ruff>=0.5",
     "pyright>=1.1.370",
@@ -68,4 +69,9 @@ typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# -p no:langsmith disables the langsmith pytest plugin which hangs on import
+# under Python 3.14. Langsmith is a transitive dep of litellm; we don't use
+# its tracing here.
+addopts = "-q -p no:langsmith"
+# auto-mark async test functions; saves a `@pytest.mark.asyncio` per test
+asyncio_mode = "auto"
