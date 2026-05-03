@@ -52,9 +52,7 @@ class ICP(BaseModel):
         default_factory=list,
         description="SIRENE diffusion status filter; defaults to public ('O').",
     )
-    require_active: bool = Field(
-        default=True, description="Exclude legally-closed entities."
-    )
+    require_active: bool = Field(default=True, description="Exclude legally-closed entities.")
 
     @model_validator(mode="after")
     def at_least_one_filter(self) -> ICP:
@@ -97,7 +95,7 @@ class Company(BaseModel):
     name: str
     naf_code: str
     headcount_tranche: str  # SIRENE tranche code "00" .. "53"
-    headcount_label: str    # human label, e.g. "10 to 19"
+    headcount_label: str  # human label, e.g. "10 to 19"
     region_code: str
     department_code: str
     postal_code: str

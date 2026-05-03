@@ -19,8 +19,7 @@ import streamlit as st
 st.set_page_config(page_title="prospecter", layout="wide")
 st.title("prospecter")
 st.caption(
-    "Multi-agent B2B prospector over the SIRENE registry. "
-    "Type an ICP and watch three agents fire."
+    "Multi-agent B2B prospector over the SIRENE registry. Type an ICP and watch three agents fire."
 )
 
 nl = st.text_input(
@@ -35,10 +34,7 @@ with col_top:
     top_n = st.slider("Top-N", min_value=10, max_value=100, value=50, step=10)
 
 if go:
-    st.warning(
-        "UI not implemented yet — see app/streamlit_app.py and PROMPTS.md "
-        "(session 5)."
-    )
+    st.warning("UI not implemented yet — see app/streamlit_app.py and PROMPTS.md (session 5).")
     # TODO(session-5):
     #  app = build_graph(llm=LLM.from_env(), store=SireneStore())
     #  with st.status("Running pipeline...", expanded=True) as status:

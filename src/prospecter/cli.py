@@ -25,7 +25,9 @@ def run(
 ):
     """Run the parse → search → score pipeline and write a ranked CSV."""
     load_dotenv()
-    logging.basicConfig(level=log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
     leads, state = run_pipeline(nl_query, output_dir=output, top_n=top_n)
 
@@ -57,6 +59,7 @@ def run(
 def version():
     """Print the package version."""
     from prospecter import __version__
+
     console.print(__version__)
 
 

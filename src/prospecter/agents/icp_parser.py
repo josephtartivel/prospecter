@@ -49,7 +49,9 @@ def _extract_tool_call(response: Any) -> dict[str, Any] | None:
     if message is None:
         return None
     tool_calls = (
-        message.get("tool_calls") if isinstance(message, dict) else getattr(message, "tool_calls", None)
+        message.get("tool_calls")
+        if isinstance(message, dict)
+        else getattr(message, "tool_calls", None)
     )
     if not tool_calls:
         return None
@@ -127,8 +129,7 @@ def parse_icp(
                 {
                     "role": "user",
                     "content": (
-                        "The submitted ICP failed validation. Fix and resubmit:\n"
-                        f"{last_error}"
+                        f"The submitted ICP failed validation. Fix and resubmit:\n{last_error}"
                     ),
                 }
             )

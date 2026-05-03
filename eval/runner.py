@@ -45,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--log", default="INFO")
     args = p.parse_args(argv)
 
-    logging.basicConfig(level=args.log.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=args.log.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
     icps = load_icps()
     log.info("loaded %d ICPs", len(icps))

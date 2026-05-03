@@ -19,7 +19,9 @@ from prospecter.tools.duckdb_tool import SireneStore
 log = logging.getLogger(__name__)
 
 
-def run(nl_query: str, *, output_dir: str | Path = "out", top_n: int = 50) -> tuple[list[Lead], RunState]:
+def run(
+    nl_query: str, *, output_dir: str | Path = "out", top_n: int = 50
+) -> tuple[list[Lead], RunState]:
     """Run the full pipeline. Returns the ranked top-N leads and the run state."""
     llm = LLM.from_env()
     store = SireneStore()
@@ -37,11 +39,7 @@ def run(nl_query: str, *, output_dir: str | Path = "out", top_n: int = 50) -> tu
 def _build_leads(state: RunState, *, top_n: int) -> list[Lead]:
     """Match scores back to companies and return the top-N as Leads."""
     by_siren = {c.siren: c for c in state.candidates}
-    pairs = [
-        Lead(company=by_siren[s.siren], score=s)
-        for s in state.scores
-        if s.siren in by_siren
-    ]
+    pairs = [Lead(company=by_siren[s.siren], score=s) for s in state.scores if s.siren in by_siren]
     pairs.sort(key=lambda p: (p.score.value, p.score.confidence), reverse=True)
     return pairs[:top_n]
 

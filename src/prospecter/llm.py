@@ -128,7 +128,11 @@ class LLM:
         response = litellm_completion(**kwargs)
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
-        usage = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
+        usage = (
+            response.get("usage")
+            if isinstance(response, dict)
+            else getattr(response, "usage", None)
+        )
         in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
         out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
         # LiteLLM exposes `_hidden_params["response_cost"]` when it can compute it.
