@@ -28,7 +28,9 @@ def run(
     app = build_graph(llm=llm, store=store)
 
     initial = RunState(nl_query=nl_query, started_at=datetime.now(tz=UTC))
-    final: RunState = app.invoke(initial)  # type: ignore[assignment]
+    # Pregel.invoke returns a plain dict shaped like the state schema, not
+    # the Pydantic instance — we coerce so downstream code can use attrs.
+    final = RunState.model_validate(app.invoke(initial))
 
     leads = _build_leads(final, top_n=top_n)
     out_path = _write_csv(leads, output_dir=Path(output_dir), nl_query=nl_query)
