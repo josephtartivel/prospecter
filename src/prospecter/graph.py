@@ -8,7 +8,7 @@ results. Skeleton — implement in session 4.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from langgraph.graph import END, StateGraph
 
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def build_graph(*, llm: LLM, store: SireneStore):

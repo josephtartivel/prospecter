@@ -8,7 +8,6 @@ are versioned files, not how cleverly we load them.
 from __future__ import annotations
 
 from pathlib import Path
-from string import Template
 
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 

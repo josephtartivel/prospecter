@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import csv
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from prospecter.graph import build_graph
@@ -25,7 +25,7 @@ def run(nl_query: str, *, output_dir: str | Path = "out", top_n: int = 50) -> tu
     store = SireneStore()
     app = build_graph(llm=llm, store=store)
 
-    initial = RunState(nl_query=nl_query, started_at=datetime.now(tz=timezone.utc))
+    initial = RunState(nl_query=nl_query, started_at=datetime.now(tz=UTC))
     final: RunState = app.invoke(initial)  # type: ignore[assignment]
 
     leads = _build_leads(final, top_n=top_n)
@@ -49,7 +49,7 @@ def _build_leads(state: RunState, *, top_n: int) -> list[Lead]:
 def _write_csv(leads: list[Lead], *, output_dir: Path, nl_query: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     slug = "-".join(nl_query.lower().split())[:40].rstrip("-")
-    today = datetime.now(tz=timezone.utc).date().isoformat()
+    today = datetime.now(tz=UTC).date().isoformat()
     path = output_dir / f"{today}_{slug}.csv"
     with path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)

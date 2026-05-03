@@ -21,7 +21,7 @@ import logging
 
 from prospecter.llm import LLM
 from prospecter.prompt_library import PromptLibrary
-from prospecter.schemas import Company, ICP, Score
+from prospecter.schemas import ICP, Company, Score
 
 log = logging.getLogger(__name__)
 

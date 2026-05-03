@@ -12,7 +12,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-
 # --- ICP -------------------------------------------------------------------
 
 
@@ -58,7 +57,7 @@ class ICP(BaseModel):
     )
 
     @model_validator(mode="after")
-    def at_least_one_filter(self) -> "ICP":
+    def at_least_one_filter(self) -> ICP:
         any_set = (
             bool(self.naf_codes)
             or self.headcount_min is not None

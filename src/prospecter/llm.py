@@ -30,7 +30,6 @@ from tenacity import (
     wait_exponential,
 )
 
-
 # LiteLLM has its own retry/backoff but we centralise here so behaviour is
 # identical regardless of provider. We only retry on transient errors.
 _TRANSIENT = (
@@ -65,7 +64,7 @@ class LLM:
     history: list[CallRecord] = field(default_factory=list)
 
     @classmethod
-    def from_env(cls) -> "LLM":
+    def from_env(cls) -> LLM:
         return cls(primary_model=os.environ.get("PROSPECTER_MODEL_PARSER", "claude-haiku-4-5"))
 
     @retry(
