@@ -31,3 +31,5 @@ eval/reports/*.html
 
 # Streamlit
 .streamlit/
+out/
+data/.nosync
