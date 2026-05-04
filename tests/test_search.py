@@ -171,6 +171,39 @@ class TestNAFFilter:
         results = search(ICP(naf_codes=["99.99Z"]), store=store)
         assert results == []
 
+    def test_full_code_still_exact(self, store):
+        # Regression-lock: when the parser produces a complete 6-char
+        # NAF code, the prefix predicate must self-match it (data is
+        # exactly 6 chars wide so `LIKE 'XXXXXX%'` ≡ `=`).
+        results = search(ICP(naf_codes=["62.02A"]), store=store)
+        assert {c.naf_code for c in results} == {"62.02A"}
+        assert len(results) == 13
+
+    def test_prefix_expands_subletters(self, store):
+        # `62.0` matches 62.02A and 62.01Z — the whole 62.* division.
+        results = search(ICP(naf_codes=["62.0"]), store=store)
+        assert {c.naf_code for c in results} == {"62.02A", "62.01Z"}
+        assert len(results) == 13 + 4
+
+    def test_short_prefix_two_digit(self, store):
+        # `62` is the shortest meaningful NAF prefix (division level).
+        results = search(ICP(naf_codes=["62"]), store=store)
+        assert {c.naf_code for c in results} == {"62.02A", "62.01Z"}
+
+    def test_mixed_full_and_prefix(self, store):
+        # Caller can mix prefixes and full codes in one query.
+        results = search(ICP(naf_codes=["56.10", "62.01Z"]), store=store)
+        nafs = {c.naf_code for c in results}
+        assert nafs == {"56.10A", "62.01Z"}
+
+    def test_nonexistent_z_code_returns_zero(self, store):
+        # `62.02Z` is the NACE-style spelling Mistral sometimes emits;
+        # there is no such code in NAF/SIRENE so the result is 0. This
+        # test documents the failure mode as a *parser* bug — the
+        # search-side fix intentionally does not mask it.
+        results = search(ICP(naf_codes=["62.02Z"]), store=store)
+        assert results == []
+
 
 class TestHeadcountTrancheOverlap:
     def test_range_inside_two_tranches(self, store):
@@ -245,6 +278,17 @@ class TestGeographyFilters:
             store=store,
         )
         assert _sirens(results) == ["000000001", "000000026"]
+
+    def test_postal_prefix_expands_to_arrondissement_set(self, store):
+        # `["75"]` matches every Paris arrondissement in the fixture.
+        # Same prefix-tolerant predicate as NAF: 5-char postal code
+        # data means `LIKE 'XXXXX%'` self-matches a full code (covered
+        # by ``test_postal_filter`` above as the regression-lock).
+        results = search(ICP(postal_codes=["75"]), store=store)
+        sirens = _sirens(results)
+        # 14 Paris siège rows after active+public filters (see fixture).
+        assert len(sirens) == 14
+        assert all(c.postal_code.startswith("75") for c in results)
 
     def test_only_siege_establishment_used(self, store):
         # SIREN 1 has a non-siège establishment at 75011, but only its

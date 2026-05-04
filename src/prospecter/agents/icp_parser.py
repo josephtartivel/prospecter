@@ -86,7 +86,7 @@ def parse_icp(
     feeding the error back to the model so it can self-correct.
     """
     prompts = prompts or PromptLibrary()
-    system = prompts.load("icp_parser", version=1)
+    system = prompts.load("icp_parser", version=2)
     chosen_model = model or os.environ.get("PROSPECTER_MODEL_PARSER", "claude-haiku-4-5")
 
     messages: list[dict[str, Any]] = [

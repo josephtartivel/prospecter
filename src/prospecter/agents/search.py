@@ -40,6 +40,27 @@ FROM companies
 """
 
 
+def _prefix_or_clause(
+    field: str, values: list[str], params: dict[str, object], key_prefix: str
+) -> str:
+    """Build ``(field LIKE $k0 OR field LIKE $k1 ...)`` with ``v || '%'`` params.
+
+    Prefix-tolerant predicate over a hierarchical-code column. The LLM-
+    typed inputs (NAF, postal) are taxonomies where a partial code is a
+    valid generalisation: ``10.71`` covers all sub-letters, ``75`` covers
+    every Paris arrondissement. Full-code data is fixed-width (NAF=6,
+    postal=5), so a complete value's ``LIKE 'XXXXXX%'`` matches only
+    itself — the predicate is backward-compatible with the ``IN(...)``
+    formulation it replaces. See ADR-008.
+    """
+    parts = []
+    for i, v in enumerate(values):
+        k = f"{key_prefix}_{i}"
+        parts.append(f"{field} LIKE ${k}")
+        params[k] = v + "%"
+    return "(" + " OR ".join(parts) + ")"
+
+
 def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
     """Compose the WHERE-clause fragments and the parameter dict.
 
@@ -53,8 +74,7 @@ def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
     params: dict[str, object] = {}
 
     if icp.naf_codes:
-        clauses.append("naf_code IN (SELECT UNNEST($naf_codes))")
-        params["naf_codes"] = list(icp.naf_codes)
+        clauses.append(_prefix_or_clause("naf_code", list(icp.naf_codes), params, "naf_p"))
 
     # Tranche overlap: tranche.max >= icp.min AND tranche.min <= icp.max.
     # NULL tranche_max means "10000+" (open right edge), so the >=
@@ -75,8 +95,7 @@ def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
         params["department_codes"] = list(icp.department_codes)
 
     if icp.postal_codes:
-        clauses.append("postal_code IN (SELECT UNNEST($postal_codes))")
-        params["postal_codes"] = list(icp.postal_codes)
+        clauses.append(_prefix_or_clause("postal_code", list(icp.postal_codes), params, "postal_p"))
 
     # Age filters compare against ``current_date`` rather than a fixed
     # epoch so re-runs against the same data are still date-relative.

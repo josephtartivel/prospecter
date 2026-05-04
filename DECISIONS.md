@@ -8,6 +8,49 @@ The detailed write-ups live in `notes/NNNN-*.md`. This file is the index.
 
 ---
 
+## ADR-008 — Search predicates accept prefixes for hierarchical taxonomy fields
+**Status:** Accepted · **Date:** 2026-05-04
+
+The Search agent translates an LLM-typed `ICP` into SQL. The original
+predicate for `naf_codes` and `postal_codes` was `IN (...)`, which exact-
+matches the LLM output against the SIRENE column verbatim. That works
+when the parser is right and explodes silently to zero candidates when
+it isn't. The dominant failure mode in practice is the parser confusing
+NACE Rev2 (`10.71Z`) with NAF (`10.71A/B/C/D`), or picking the wrong
+sub-letter under temperature-zero Mistral instability — verified case:
+`["10.71A", "10.71B"]` returns 685 boulangeries while the bulk of the
+target population (71k) sits at `10.71C` and gets missed. Postal codes
+exhibit the same brittleness when the user names a department area
+(`"Côte d'Azur"`) but the LLM emits one specific arrondissement.
+
+NAF and postal are *hierarchical* — a partial code (`10.71`, `75`) is a
+valid generalisation. We rewrite both predicates as a prefix-tolerant
+`LIKE 'X%'` OR-list. SIRENE NAF is exactly six characters and postal
+five, so a complete value's `LIKE 'XXXXXX%'` self-matches and the
+predicate is byte-equivalent to the `IN(...)` it replaces — backward-
+compatible with every full-code call site. On the parquet store the
+LIKE predicate is in fact faster than `IN (SELECT UNNEST(...))`
+(17ms vs 42ms median on a 62.02A scan), since DuckDB compiles
+fixed-prefix LIKE to a scalar bytewise check while the IN form
+materialises a list and runs a hash probe.
+
+The cure is per-axis: prefix expansion fits hierarchical, fixed-width
+codes (NAF, postal). It does not generalise to `region_code` or
+`department_codes`, which are small enumerable sets where the LLM's
+failure mode is hallucinating an off-list value (`"PACA"`, `"23"` for
+old codes). Those will get a Pydantic enum + retry-loop fix in a
+later session — same anti-pattern, different cure. We considered a
+two-tier fallback (exact, then prefix on zero results) and rejected
+it: implicit double-scan, masks parser regressions, and removes the
+clean failure signal that `["10.71Z"]` returns zero. We considered
+giving the parser a `lookup_naf` tool, but that adds a round-trip per
+parse and breaks the latency budget — the search-side fix absorbs the
+same class of error for ten lines of SQL. The `icp_parser` prompt is
+bumped to v2 to teach the parser that prefixes are accepted, so the
+robustness compounds rather than living entirely on the search side.
+
+---
+
 ## ADR-007 — Langfuse for LLM observability
 **Status:** Accepted · **Date:** 2026-05-03
 
