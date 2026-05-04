@@ -22,7 +22,9 @@ dependencies = [
     "tenacity>=9.0",
     # Observability — LiteLLM forwards `metadata` to the Langfuse callback when
     # registered. Toggle via LANGFUSE_ENABLED; absent keys make the wrapper a no-op.
-    "langfuse>=2.50.0",
+    # Pinned <3 because LiteLLM's integration still imports `langfuse.version`,
+    # which v3 renamed to `langfuse._version`. Bump when LiteLLM ships v3 support.
+    "langfuse>=2.50,<3",
 ]
 
 [project.optional-dependencies]
