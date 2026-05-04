@@ -107,6 +107,10 @@ class Company(BaseModel):
 
 class Score(BaseModel):
     siren: str = Field(min_length=9, max_length=9)
+    # Integer 1–5 per the scorer rubric (``prompts/scorer_v2.md``).
+    # The eval label scale (planned ``eval/bootstrap_labels.py``) is
+    # a separate decision tracked in ADR-011 — P@10 / NDCG@10 don't
+    # require the two scales to agree.
     value: int = Field(ge=1, le=5)
     reason: str = Field(max_length=200)
     confidence: float = Field(ge=0.0, le=1.0)

@@ -8,6 +8,50 @@ The detailed write-ups live in `notes/NNNN-*.md`. This file is the index.
 
 ---
 
+## ADR-011 — Scoring scale 1–5 in prod; label scale deferred to bootstrap
+**Status:** Accepted · **Date:** 2026-05-04
+
+The prod scorer outputs an integer score in `[1, 5]`, enforced by
+`Score.value: int = Field(ge=1, le=5)` in `schemas.py` and the rubric
+in `prompts/scorer_v2.md`. The two are coherent with each other:
+Pydantic accepts exactly the range the prompt asks for, the prompt
+defines a meaning per integer (5 = exact fit on every available axis,
+1 = clearly off-ICP on at least two axes), and the scorer agent
+retries on validation error so out-of-range hallucinations are caught
+and corrected before they reach the result list. There is no schema-
+prompt drift here despite intuitions to the contrary.
+
+The eval label scale — what `eval/bootstrap_labels.py` will assign
+when it gets written — is a separate decision and is *not* tied to
+the scorer scale. The eval metrics in `eval/metrics.py` are scorer-
+scale-independent: `precision_at_k` thresholds the *labels* at `≥ 1`
+and ranks by the scorer's output order; `ndcg_at_k` uses *labels* for
+the gain at each rank position. Whether the label scale is `{0, 1}`,
+`{0, 1, 2}`, or `[1, 5]`, the metrics still compute meaningfully so
+long as larger labels mean "more relevant".
+
+We therefore keep prod at 1–5 and explicitly defer the label-scale
+decision to the moment `bootstrap_labels.py` is written. The natural
+choice will be 0–2 (faster human review, higher Cohen's kappa with
+fewer categories) or 1–5 (direct numeric comparability with prod
+output for calibration plots), and the trade-off is reviewability vs
+calibration richness — neither breaks correctness today. The schema
+docstring on `Score.value` points future readers at this ADR so the
+deferral is discoverable from the type rather than being purely tribal
+knowledge.
+
+We considered collapsing prod to 0–2 to harmonise eagerly, and
+rejected it: the 1–5 rubric is already implemented, retried, prompt-
+tuned, and battle-tested through the search work; collapsing would
+invalidate ~70 lines of rubric prose and gain only the cosmetic of
+"prod and labels both report the same number". We considered tightening
+the schema to `Literal[1, 2, 3, 4, 5]` (integer enum) instead of
+`int + ge/le`, and rejected it as cosmetic — Pydantic's range check
+is already exhaustive for ints, and the existing test
+`test_value_outside_range_rejected` proves it.
+
+---
+
 ## ADR-010 — Search agent contract: top-N deterministic ordering
 **Status:** Accepted · **Date:** 2026-05-04
 
