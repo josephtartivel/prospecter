@@ -18,6 +18,19 @@ import duckdb
 log = logging.getLogger(__name__)
 
 
+def _quote_path(p: str | Path) -> str:
+    """Inline a filesystem path as a SQL string literal.
+
+    DuckDB's binder rejects prepared parameters inside table functions
+    (``read_csv_auto``, ``read_parquet``) and inside ``COPY ... TO`` —
+    the value must be a literal at parse time. Inlining is safe here
+    because every path we pass originates from ``Path()`` and never from
+    user input; the single-quote doubling defends against paths that
+    legitimately contain apostrophes (e.g. ``/Users/joe's mac/...``).
+    """
+    return "'" + str(p).replace("'", "''") + "'"
+
+
 # --- SIRENE tranche reference ------------------------------------------------
 #
 # ``trancheEffectifsUniteLegale`` is a small categorical of headcount
@@ -294,8 +307,7 @@ def _install_companies_view(con: duckdb.DuckDBPyConnection, base: Path) -> None:
     parquet = base / "sirene.parquet"
     if parquet.exists():
         con.execute(
-            "CREATE OR REPLACE VIEW companies AS SELECT * FROM read_parquet($path)",
-            {"path": str(parquet)},
+            f"CREATE OR REPLACE VIEW companies AS SELECT * FROM read_parquet({_quote_path(parquet)})"
         )
         return
 
@@ -308,22 +320,22 @@ def _install_companies_view(con: duckdb.DuckDBPyConnection, base: Path) -> None:
         )
 
     # Project at scan time (DuckDB pushes the column list into the CSV
-    # reader, so unused columns are never materialised).
+    # reader, so unused columns are never materialised). The path is
+    # inlined via ``_quote_path`` because the binder forbids prepared
+    # parameters inside ``read_csv_auto``.
     con.execute(
         f"""
         CREATE OR REPLACE VIEW stock_unite_legale AS
         SELECT {", ".join(_COLS_UNITE_LEGALE)}
-        FROM read_csv_auto($path_ul, header=true, all_varchar=true)
-        """,
-        {"path_ul": str(csv_unite)},
+        FROM read_csv_auto({_quote_path(csv_unite)}, header=true, all_varchar=true)
+        """
     )
     con.execute(
         f"""
         CREATE OR REPLACE VIEW stock_etablissement AS
         SELECT {", ".join(_COLS_ETABLISSEMENT)}
-        FROM read_csv_auto($path_et, header=true, all_varchar=true)
-        """,
-        {"path_et": str(csv_etab)},
+        FROM read_csv_auto({_quote_path(csv_etab)}, header=true, all_varchar=true)
+        """
     )
     _install_companies_view_from_stocks(con)
 
@@ -397,11 +409,29 @@ class SireneStore:
         try:
             _register_reference_tables(con)
             _install_companies_view(con, base)
+            # ``COPY ... TO`` shares the table-function binder restriction:
+            # the destination must be a string literal, not a prepared param.
             con.execute(
-                "COPY companies TO $path (FORMAT PARQUET, COMPRESSION ZSTD)",
-                {"path": str(parquet)},
+                f"COPY companies TO {_quote_path(parquet)} (FORMAT PARQUET, COMPRESSION ZSTD)"
             )
         finally:
             con.close()
         log.info("wrote %s", parquet)
         return parquet
+
+
+# Entry point for ``uv run python -m prospecter.tools.duckdb_tool materialize``,
+# the command documented in ``data/README.md``. Kept as a tiny typer app
+# rather than wired into the main ``prospecter`` CLI to keep the materialise
+# operation co-located with the store it operates on.
+if __name__ == "__main__":
+    import typer
+
+    _app = typer.Typer(add_completion=False)
+
+    @_app.command()
+    def materialize(base: str = "data/sirene") -> None:
+        """Write the joined companies view to ``<base>/sirene.parquet``."""
+        SireneStore.materialize(base)
+
+    _app()
