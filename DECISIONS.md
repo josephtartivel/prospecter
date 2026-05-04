@@ -8,6 +8,62 @@ The detailed write-ups live in `notes/NNNN-*.md`. This file is the index.
 
 ---
 
+## ADR-010 — Search agent contract: top-N deterministic ordering
+**Status:** Accepted · **Date:** 2026-05-04
+
+ADR-008 and ADR-009 made the search robust to LLM taxonomy errors and
+recovered the boulangerie case from 0 to 1000 candidates. The
+downstream effect was a cost cascade: the scorer agent runs one LLM
+call per candidate, so 1000 candidates per ICP run × 30 ICPs in the
+eval set = 30k Mistral Small calls per full eval, ~$3-5 and ~30
+minutes wall-clock. The cascade is the natural consequence of
+combining a permissive search with a per-row LLM scorer; either side
+must bound it.
+
+We bound it at the search side. The search contract changes from
+*"every row matching the hard filter"* to *"top N most actionable
+candidates by deterministic signal"*. The ranking is a SQL `ORDER BY`
+chain — no new module, no new graph node, no new abstractions. Three
+signals, evaluated lexicographically:
+
+1. `has_name`: rows with empty `denominationUniteLegale` are demoted
+   to the bottom. SIRENE has a long tail of shell entities with no
+   public denomination; these are not actionable leads regardless of
+   how well they match the filter, so they belong below any named
+   row even when newer.
+2. `tranche_fit`: candidates whose headcount tranche is *entirely
+   within* the ICP `[min, max]` range rank above those that merely
+   *overlap* an edge, which in turn rank above tranche `NN`
+   (unknown bounds — kept under uncertainty per the existing ICP
+   spec, but ranked last).
+3. `creation_date DESC NULLS LAST`: stable tiebreak, newest first
+   — same as the previous default ordering.
+
+`max_results` default drops from 1000 to 50, matching the size of
+`eval/bootstrap_labels`'s top-50/ICP labelling so prod and eval see
+the same candidate distribution. The scorer becomes a re-ranker on
+50 candidates rather than a bulk filter on 1000 — Mistral cost per
+ICP drops by 20×; eval set wall-clock drops to ~2-3 minutes.
+
+We considered a separate prerank agent and rejected it. The signals
+are deterministic and column-bound, the ordering belongs in the same
+SQL that already does the WHERE filtering — adding a Python layer
+between search and score would be a new abstraction without a new
+behaviour. We considered weighted scoring (sum of normalised signals
+with tunable weights) and rejected it — lexicographic ordering has
+no magic constants and is trivially testable. We considered keeping
+the 1000 cap and pushing the scoring concern downstream (batch
+scoring, smaller scoring model) — both are larger interventions
+than a contract change at the source.
+
+The trade is recall on the long tail of well-fitting candidates that
+fall below position 50 in the deterministic ranking. The eval set
+will measure whether this hurts P@10 in practice; the prior is no,
+because the prerank signals select for the same properties the
+scorer would have selected anyway.
+
+---
+
 ## ADR-009 — Search absorbs the NACE-vs-NAF parser failure
 **Status:** Accepted · **Date:** 2026-05-04 · **Supersedes part of ADR-008**
 

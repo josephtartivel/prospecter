@@ -98,12 +98,16 @@ def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
     # Tranche overlap: tranche.max >= icp.min AND tranche.min <= icp.max.
     # NULL tranche_max means "10000+" (open right edge), so the >=
     # comparison passes by treating NULL as +inf via COALESCE.
+    # The params are bound unconditionally (None when the ICP doesn't
+    # set them) because the prerank ORDER BY references them in every
+    # query — DuckDB needs the placeholder bound even when the WHERE
+    # branch that uses it is absent.
+    params["headcount_min"] = icp.headcount_min
+    params["headcount_max"] = icp.headcount_max
     if icp.headcount_min is not None:
         clauses.append("COALESCE(tranche_max, 2147483647) >= $headcount_min")
-        params["headcount_min"] = icp.headcount_min
     if icp.headcount_max is not None:
         clauses.append("COALESCE(tranche_min, 0) <= $headcount_max")
-        params["headcount_max"] = icp.headcount_max
 
     if icp.region_code is not None:
         clauses.append("region_code = $region_code")
@@ -131,12 +135,15 @@ def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
     return clauses, params
 
 
-def search(icp: ICP, *, store: SireneStore, max_results: int = 1000) -> list[Company]:
-    """Return up to ``max_results`` candidates matching ``icp``.
+def search(icp: ICP, *, store: SireneStore, max_results: int = 50) -> list[Company]:
+    """Return up to ``max_results`` candidates matching ``icp``, pre-ranked.
 
-    Sorted by ``creation_date DESC`` so newer companies surface first.
-    If the unbounded result count exceeds ``max_results``, the list is
-    truncated and a warning is logged.
+    The contract is "top N most actionable candidates by deterministic
+    signal", not "every match" — the SQL ORDER BY ranks by
+    (has_name, tranche_fit, creation_date) so the LLM scorer downstream
+    does nuanced fit assessment on a bounded set instead of bulk
+    filtering. Default N=50 aligns with ``eval/bootstrap_labels`` so
+    prod and eval see the same candidate distribution. See ADR-010.
     """
     con = store.connect()
     clauses, params = _build_where(icp)
@@ -145,7 +152,26 @@ def search(icp: ICP, *, store: SireneStore, max_results: int = 1000) -> list[Com
     # Fetch one extra row so we can detect (and log) silent truncation
     # without a separate COUNT(*) round-trip.
     params["limit_plus_one"] = max_results + 1
-    sql = f"{_SELECT} {where} ORDER BY creation_date DESC NULLS LAST LIMIT $limit_plus_one"
+    # Three-tier ORDER BY:
+    #   1. has_name: rows without denomination are not actionable leads
+    #      (SIRENE has many shell entities with empty `denominationUniteLegale`).
+    #   2. tranche_fit: 2 = candidate's tranche is entirely inside the ICP
+    #      headcount window (most precise match), 1 = overlapping (passed
+    #      the WHERE so at least overlaps), 0 = unknown ("NN" tranche
+    #      with NULL bounds — kept under uncertainty but ranked last).
+    #   3. creation_date DESC: stable tiebreak, newest first.
+    order_by = """
+ORDER BY
+    CASE WHEN name <> '' THEN 1 ELSE 0 END DESC,
+    CASE
+        WHEN tranche_min IS NULL OR tranche_max IS NULL THEN 0
+        WHEN $headcount_min IS NOT NULL AND $headcount_max IS NOT NULL
+             AND tranche_min >= $headcount_min AND tranche_max <= $headcount_max THEN 2
+        ELSE 1
+    END DESC,
+    creation_date DESC NULLS LAST
+"""
+    sql = f"{_SELECT} {where} {order_by} LIMIT $limit_plus_one"
     rows = con.execute(sql, params).fetchall()
 
     truncated = len(rows) > max_results

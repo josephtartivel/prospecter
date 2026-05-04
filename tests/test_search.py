@@ -97,6 +97,11 @@ def store():
         ("000000028", "delta2 sas", "62.02A", "32", "2020-03-20", "A", "O"),
         ("000000029", "epsilon2 sas", "62.02A", "41", "2020-03-25", "A", "O"),
         ("000000030", "zeta2 sas", "62.02A", "12", "2020-04-10", "A", "O"),
+        # Prerank-only rows: unique NAF/postal so they don't affect any
+        # existing count assertion. Used by ``TestPrerank::test_has_name_first``
+        # to compare a named row against an empty-name row.
+        ("000000031", "named co sas", "88.88X", "11", "2023-01-01", "A", "O"),
+        ("000000032", "", "88.88X", "11", "2024-01-01", "A", "O"),
     ]
     con.executemany(
         "INSERT INTO stock_unite_legale VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -139,6 +144,8 @@ def store():
         ("000000028", "00000002800001", "true", "75003", "Paris"),
         ("000000029", "00000002900001", "true", "75004", "Paris"),
         ("000000030", "00000003000001", "true", "75007", "Paris"),
+        ("000000031", "00000003100001", "true", "01000", "Bourg-en-Bresse"),
+        ("000000032", "00000003200001", "true", "01000", "Bourg-en-Bresse"),
     ]
     con.executemany(
         "INSERT INTO stock_etablissement VALUES (?, ?, ?, ?, ?)",
@@ -386,3 +393,56 @@ class TestOrderingAndTruncation:
         with caplog.at_level(logging.WARNING):
             search(ICP(naf_codes=["62.01Z"]), store=store, max_results=100)
         assert not any("truncated" in r.message for r in caplog.records)
+
+
+class TestPrerank:
+    """Prerank ordering: ``(has_name, tranche_fit, creation_date)`` per ADR-010."""
+
+    def test_has_name_first(self, store):
+        # Two `88.88X` rows: row 31 named (older), row 32 empty name (newer).
+        # has_name dominates recency, so 31 must precede 32 despite the
+        # date tiebreak normally favouring 32.
+        results = search(ICP(naf_codes=["88.88X"]), store=store)
+        sirens = [c.siren for c in results]
+        assert sirens == ["000000031", "000000032"]
+
+    def test_tranche_fit_ordering(self, store):
+        # ICP `[5, 50]` over NAF=70.22Z. Tranches passing the WHERE:
+        # 11 (10-19) entirely within, 12 (20-49) entirely within,
+        # NN (NULL bounds) unknown. Entirely-within rows come first
+        # (sorted by date DESC), unknown row last.
+        results = search(
+            ICP(naf_codes=["70.22Z"], headcount_min=5, headcount_max=50),
+            store=store,
+        )
+        sirens = [c.siren for c in results]
+        # 12 (tranche 11, 2022-01-15), 24 (tranche 12, 2020-10-10),
+        # 13 (tranche 12, 2017-04-22), 14 (tranche NN, 2020-06-01).
+        assert sirens == ["000000012", "000000024", "000000013", "000000014"]
+
+    def test_recency_tiebreak(self, store):
+        # All 6 matching rows are named + entirely-within tranches 11/12
+        # for ICP `[10, 49]`. Pure creation_date DESC tiebreak.
+        results = search(
+            ICP(naf_codes=["62.02A"], headcount_min=10, headcount_max=49),
+            store=store,
+        )
+        sirens = [c.siren for c in results]
+        assert sirens == [
+            "000000020",  # date = today - 30d
+            "000000001",  # 2022-03-01
+            "000000002",  # 2021-06-15
+            "000000030",  # 2020-04-10
+            "000000021",  # 2018-06-15
+            "000000022",  # 2014-01-01
+        ]
+
+    def test_default_max_results_is_50(self):
+        # Contract change documented in ADR-010: search returns top-50
+        # most actionable, not "everything matching". Asserted via
+        # signature introspection so the test is independent of fixture
+        # row counts.
+        import inspect
+
+        sig = inspect.signature(search)
+        assert sig.parameters["max_results"].default == 50
