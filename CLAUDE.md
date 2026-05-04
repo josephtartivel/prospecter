@@ -79,8 +79,7 @@ user. Don't expand scope silently.
 
 ## Where the build plan lives
 `PROMPTS.md` has the scoped sessions (1-9 plus 5b). One terminal per
-session. One commit (max two) per session. If a session is sliding
-past three commits, scope is out of hand.
+session.
 
 `_handoff/` contains drop-in specs and code that specific sessions
 read, adapt, and `git rm` once consumed. The folder shrinks toward
