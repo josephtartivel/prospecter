@@ -15,6 +15,7 @@ adding signal.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from collections.abc import Iterable
@@ -29,6 +30,18 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+# Silence LiteLLM's INFO chatter — by default it logs every completion +
+# every callback invocation, and because LiteLLM attaches its own
+# StreamHandler the records get emitted twice (once with LiteLLM's
+# format, once via the propagated root logger). Lifting the level to
+# WARNING and turning off propagation kills both copies in one move.
+# Errors and rate-limit warnings still surface.
+for _name in ("LiteLLM", "litellm", "litellm.utils", "litellm.proxy"):
+    _lg = logging.getLogger(_name)
+    _lg.setLevel(logging.WARNING)
+    _lg.propagate = False
+litellm.suppress_debug_info = True
 
 # Optional Langfuse observability via LiteLLM's callback hook. Registered
 # once at import time; absent env vars make this a no-op (the LiteLLM
