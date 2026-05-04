@@ -196,13 +196,24 @@ class TestNAFFilter:
         nafs = {c.naf_code for c in results}
         assert nafs == {"56.10A", "62.01Z"}
 
-    def test_nonexistent_z_code_returns_zero(self, store):
-        # `62.02Z` is the NACE-style spelling Mistral sometimes emits;
-        # there is no such code in NAF/SIRENE so the result is 0. This
-        # test documents the failure mode as a *parser* bug — the
-        # search-side fix intentionally does not mask it.
+    def test_nace_z_normalizes_to_prefix(self, store):
+        # `62.02Z` is NACE Rev2 spelling; the NAF subdivision is
+        # `62.02A/B`. The normalisation step rewrites `XX.XXZ` to its
+        # 5-char prefix so the search expands to the real NAF
+        # subdivision (here: `62.02A` rows in the fixture). Empirically
+        # the dominant Mistral-Small failure mode (see ADR-009).
         results = search(ICP(naf_codes=["62.02Z"]), store=store)
-        assert results == []
+        assert {c.naf_code for c in results} == {"62.02A"}
+        assert len(results) == 13
+
+    def test_legitimate_monolithic_z_still_matches(self, store):
+        # `62.01Z` is a real NAF code (programming activities — no
+        # sub-letter subdivision exists). After normalisation to the
+        # 5-char prefix `62.01`, the search still returns exactly the
+        # `62.01Z` rows because no other `62.01*` code exists in NAF.
+        results = search(ICP(naf_codes=["62.01Z"]), store=store)
+        assert {c.naf_code for c in results} == {"62.01Z"}
+        assert len(results) == 4
 
 
 class TestHeadcountTrancheOverlap:

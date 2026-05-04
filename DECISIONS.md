@@ -8,6 +8,47 @@ The detailed write-ups live in `notes/NNNN-*.md`. This file is the index.
 
 ---
 
+## ADR-009 — Search absorbs the NACE-vs-NAF parser failure
+**Status:** Accepted · **Date:** 2026-05-04 · **Supersedes part of ADR-008**
+
+ADR-008 explicitly rejected absorbing parser failures, on the grounds
+that `["10.71Z"]` returning zero is "the clean failure signal that we
+preserve". Empirical run on the verified case (*"boulangeries
+artisanales en Île-de-France de 5 à 20 employés"*) with Mistral Small
+as the parser reverses that position: the parser emits `["10.71Z"]`
+deterministically, and the v2 prompt instruction to prefer prefixes
+over guessed sub-letters is ignored. The "clean failure signal" is
+unactionable for this parser — it just becomes "0 candidates, why?"
+and offers no path to recovery short of swapping the model. We have
+no Anthropic key for this project, and OpenAI/DeepSeek would still
+leave the failure mode latent for any future operator running on
+Mistral.
+
+We add a normalisation step in `_build_where`: a code matching the
+regex `^\d{2}\.\d{2}Z$` is rewritten to its 5-char prefix before the
+prefix-or predicate runs (`10.71Z` → `10.71`). The rule is precise
+and motivated by the structure of NAF itself. In NAF, `XX.XXZ` is
+*either* a legitimate monolithic code (some classes do not subdivide
+— `62.01Z`, `70.22Z`, `82.99Z`) *or* a NACE Rev2-formatted output the
+parser produced for a class that *does* subdivide (`10.71` →
+`A/B/C/D`). The rewrite is symmetric: a legitimate monolithic `Z`
+becomes the 5-char prefix, but the only NAF code under that prefix is
+the `Z` itself so no extra rows are admitted; an erroneous `Z` becomes
+the same prefix and admits the full NAF subdivision — the correct
+result. We trade the failure signal for end-to-end correctness on the
+dominant empirical failure mode.
+
+The cost is one regex match per ICP NAF entry and a small expansion
+of the surface that gets quietly absorbed: a parser hallucinating a
+truly invalid code shaped `XX.XXZ` (where neither monolithic-NAF nor
+NACE-confusion explains it) now masquerades as the prefix instead of
+returning zero. We accept this in exchange for the empirical recovery
+of the boulangerie case from 0 to ~3.9k candidates without a model
+swap. The eval set will measure whether this changes precision in
+practice.
+
+---
+
 ## ADR-008 — Search predicates accept prefixes for hierarchical taxonomy fields
 **Status:** Accepted · **Date:** 2026-05-04
 

@@ -11,11 +11,29 @@ See SPEC §7 for the contract.
 from __future__ import annotations
 
 import logging
+import re
 
 from prospecter.schemas import ICP, Company
 from prospecter.tools.duckdb_tool import SireneStore
 
 log = logging.getLogger(__name__)
+
+
+_NACE_Z = re.compile(r"^\d{2}\.\d{2}Z$")
+
+
+def _normalize_naf_code(code: str) -> str:
+    """Rewrite a ``XX.XXZ`` code to its 5-char prefix.
+
+    ``Z`` in this position is ambiguous: legitimate monolithic NAF
+    (``62.01Z``, ``70.22Z``) or NACE Rev2 contamination from the parser
+    (``10.71Z`` does not exist in NAF; the subdivision is
+    ``10.71A/B/C/D``). Stripping the ``Z`` is symmetric: legitimate
+    monolithic codes still match because their parent prefix has no
+    other NAF children; NACE-erroneous codes expand to the real NAF
+    subdivision. See ADR-009.
+    """
+    return code[:-1] if _NACE_Z.fullmatch(code) else code
 
 
 # The SELECT list matches the field order of ``Company`` so we can pass
@@ -74,7 +92,8 @@ def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
     params: dict[str, object] = {}
 
     if icp.naf_codes:
-        clauses.append(_prefix_or_clause("naf_code", list(icp.naf_codes), params, "naf_p"))
+        normalized = [_normalize_naf_code(c) for c in icp.naf_codes]
+        clauses.append(_prefix_or_clause("naf_code", normalized, params, "naf_p"))
 
     # Tranche overlap: tranche.max >= icp.min AND tranche.min <= icp.max.
     # NULL tranche_max means "10000+" (open right edge), so the >=
