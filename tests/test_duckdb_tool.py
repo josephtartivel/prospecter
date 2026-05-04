@@ -49,21 +49,57 @@ def _write_minimal_csvs(base: Path) -> None:
     )
 
 
+def _write_csvs_with_quoted_comma(base: Path) -> None:
+    """Drop two 2-row SIRENE-shaped CSVs into ``base``.
+
+    The second ``denominationUniteLegale`` is wrapped in RFC 4180
+    quotes around an internal comma — the exact pattern that breaks
+    DuckDB's CSV autodetector on the real SIRENE 2026 dump (line
+    38805) when ``quote`` and ``escape`` are not set explicitly.
+    """
+    base.mkdir(parents=True, exist_ok=True)
+    (base / "StockUniteLegale_utf8.csv").write_text(
+        f"{_UL_HEADER}\n"
+        "000000001,acme sas,62.02A,11,2023-01-15,A,O\n"
+        '000000002,"SYND COPRO 5, RUE HEROLD",62.02A,11,2023-02-20,A,O\n',
+        encoding="utf-8",
+    )
+    (base / "StockEtablissement_utf8.csv").write_text(
+        f"{_ET_HEADER}\n"
+        "000000001,00000000100001,true,75001,Paris\n"
+        "000000002,00000000200001,true,75002,Paris\n",
+        encoding="utf-8",
+    )
+
+
 def test_install_companies_view_reads_csv(tmp_path: Path) -> None:
-    """Hits the ``read_csv_auto`` branch — the exact site that raised
-    ``BinderException`` before the fix. Without the path-inlining
-    helper this call crashes inside ``con.execute``."""
-    _write_minimal_csvs(tmp_path)
+    """Hits the ``read_csv_auto`` branch — covers the original
+    ``BinderException`` site (path inlining via ``_quote_path``) plus
+    the RFC 4180 quoted-comma path that broke the SIRENE 2026 dump.
+
+    Caveat: on a 2-row CSV, DuckDB's autodetector likely picks
+    ``quote='"'`` correctly from the visible sample, so this leans
+    more behaviour-locking than strict red→green. The actual SIRENE
+    bug only fires at scale (20k+ unquoted rows biasing the sample).
+    The production fix is what guarantees correctness on the real
+    dump; this test pins the expected parsing of the quoted-comma
+    case so a regression to ``ignore_errors``-style "fixes" would be
+    caught.
+    """
+    _write_csvs_with_quoted_comma(tmp_path)
 
     con = duckdb.connect()
     _register_reference_tables(con)
     _install_companies_view(con, tmp_path)
 
     rows = con.execute(
-        "SELECT siren, name, naf_code, headcount_label, postal_code FROM companies"
+        "SELECT siren, name, naf_code, headcount_label, postal_code FROM companies ORDER BY siren"
     ).fetchall()
 
-    assert rows == [("000000001", "acme sas", "62.02A", "10 to 19", "75001")]
+    assert rows == [
+        ("000000001", "acme sas", "62.02A", "10 to 19", "75001"),
+        ("000000002", "SYND COPRO 5, RUE HEROLD", "62.02A", "10 to 19", "75002"),
+    ]
 
 
 def test_materialize_round_trip_reads_parquet(tmp_path: Path) -> None:

@@ -323,18 +323,38 @@ def _install_companies_view(con: duckdb.DuckDBPyConnection, base: Path) -> None:
     # reader, so unused columns are never materialised). The path is
     # inlined via ``_quote_path`` because the binder forbids prepared
     # parameters inside ``read_csv_auto``.
+    #
+    # ``quote='"'`` + ``escape='"'`` is the explicit RFC 4180 reading
+    # (INSEE's stated convention). Without it, DuckDB's autodetector
+    # samples the first ~20480 lines and concludes "no quote char" when
+    # those rows are unquoted, then crashes on the first row with a
+    # quoted internal comma (e.g. ``"SYND COPRO 5, RUE HEROLD"`` in
+    # SIRENE 2026 line 38805). NOT ``ignore_errors`` / ``strict_mode=
+    # false`` — those mask schema drift instead of fixing it.
     con.execute(
         f"""
         CREATE OR REPLACE VIEW stock_unite_legale AS
         SELECT {", ".join(_COLS_UNITE_LEGALE)}
-        FROM read_csv_auto({_quote_path(csv_unite)}, header=true, all_varchar=true)
+        FROM read_csv_auto(
+            {_quote_path(csv_unite)},
+            header=true,
+            all_varchar=true,
+            quote='"',
+            escape='"'
+        )
         """
     )
     con.execute(
         f"""
         CREATE OR REPLACE VIEW stock_etablissement AS
         SELECT {", ".join(_COLS_ETABLISSEMENT)}
-        FROM read_csv_auto({_quote_path(csv_etab)}, header=true, all_varchar=true)
+        FROM read_csv_auto(
+            {_quote_path(csv_etab)},
+            header=true,
+            all_varchar=true,
+            quote='"',
+            escape='"'
+        )
         """
     )
     _install_companies_view_from_stocks(con)
@@ -428,6 +448,14 @@ if __name__ == "__main__":
     import typer
 
     _app = typer.Typer(add_completion=False)
+
+    @_app.callback()
+    def _root() -> None:
+        """SIRENE store maintenance commands."""
+        # Presence of a callback forces typer into multi-command
+        # dispatch. Without it, a single-command Typer app collapses
+        # to "options-only" mode and the subcommand name gets parsed
+        # as an unexpected positional argument.
 
     @_app.command()
     def materialize(base: str = "data/sirene") -> None:
