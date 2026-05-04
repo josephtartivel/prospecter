@@ -30,6 +30,16 @@ from tenacity import (
     wait_exponential,
 )
 
+# Optional Langfuse observability via LiteLLM's callback hook. Registered
+# once at import time; absent env vars make this a no-op (the LiteLLM
+# `langfuse` callback only ships traces when both keys are set). Setting
+# `LANGFUSE_ENABLED=false` (or unset) skips registration entirely so the
+# wrapper behaves identically to a vanilla LiteLLM call.
+_LANGFUSE_ENABLED = os.getenv("LANGFUSE_ENABLED", "false").lower() == "true"
+if _LANGFUSE_ENABLED:
+    litellm.success_callback = ["langfuse"]
+    litellm.failure_callback = ["langfuse"]
+
 # LiteLLM has its own retry/backoff but we centralise here so behaviour is
 # identical regardless of provider. We only retry on transient errors.
 _TRANSIENT = (
@@ -62,10 +72,19 @@ class LLM:
 
     primary_model: str
     history: list[CallRecord] = field(default_factory=list)
+    # Per-run identifiers surfaced as Langfuse trace metadata. Set by the
+    # pipeline driver from `RunState`; left None for unit tests and when
+    # observability is off.
+    run_id: str | None = None
+    icp_id: str | None = None
 
     @classmethod
-    def from_env(cls) -> LLM:
-        return cls(primary_model=os.environ.get("PROSPECTER_MODEL_PARSER", "claude-haiku-4-5"))
+    def from_env(cls, *, run_id: str | None = None, icp_id: str | None = None) -> LLM:
+        return cls(
+            primary_model=os.environ.get("PROSPECTER_MODEL_PARSER", "claude-haiku-4-5"),
+            run_id=run_id,
+            icp_id=icp_id,
+        )
 
     @retry(
         retry=retry_if_exception_type(_TRANSIENT),
@@ -83,6 +102,7 @@ class LLM:
         max_tokens: int = 1024,
         temperature: float = 0.0,
         cache_system_prompt: bool = False,
+        agent_name: str | None = None,
     ) -> dict[str, Any]:
         """Make one LiteLLM call and record it.
 
@@ -123,6 +143,16 @@ class LLM:
             kwargs["tools"] = list(tools)
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
+        # Only attach metadata when Langfuse is on — keeps the off path
+        # byte-identical to a vanilla litellm.completion call.
+        if _LANGFUSE_ENABLED:
+            kwargs["metadata"] = {
+                "trace_id": self.run_id,
+                "trace_name": "prospecter-run",
+                "session_id": self.run_id,
+                "tags": [t for t in (agent_name, self.icp_id) if t],
+                "generation_name": agent_name,
+            }
 
         t0 = time.perf_counter()
         response = litellm_completion(**kwargs)

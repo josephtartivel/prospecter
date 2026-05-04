@@ -104,6 +104,7 @@ def parse_icp(
             max_tokens=512,
             temperature=0.0,
             cache_system_prompt=True,
+            agent_name="icp_parser",
         )
         args = _extract_tool_call(response)
         if args is None:

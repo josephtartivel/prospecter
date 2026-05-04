@@ -52,6 +52,16 @@ latency. Labeling protocol in `eval/README.md`.
 uv run python -m eval.runner --configs eval/configs/*.yaml
 ```
 
+## Observability
+
+Every LLM call is captured by Langfuse with cost, latency, token counts,
+and the full prompt/response. All calls of one prospecter run share a
+single trace, keyed by `RunState.run_id`. Set `LANGFUSE_ENABLED=true`
+plus the public/secret keys in `.env` to opt in; unset leaves the
+wrapper byte-identical to a plain LiteLLM call.
+
+![langfuse trace](docs/langfuse_trace.png)
+
 ## Results
 
 | Configuration                | P@10 | NDCG@10 |  $/ICP | p95 |

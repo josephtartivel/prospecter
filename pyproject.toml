@@ -20,6 +20,9 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "tenacity>=9.0",
+    # Observability — LiteLLM forwards `metadata` to the Langfuse callback when
+    # registered. Toggle via LANGFUSE_ENABLED; absent keys make the wrapper a no-op.
+    "langfuse>=2.50.0",
 ]
 
 [project.optional-dependencies]

@@ -23,11 +23,12 @@ def run(
     nl_query: str, *, output_dir: str | Path = "out", top_n: int = 50
 ) -> tuple[list[Lead], RunState]:
     """Run the full pipeline. Returns the ranked top-N leads and the run state."""
-    llm = LLM.from_env()
+    initial = RunState(nl_query=nl_query, started_at=datetime.now(tz=UTC))
+    # Build the LLM after the state so its run_id matches; metadata flows
+    # to Langfuse only when LANGFUSE_ENABLED=true.
+    llm = LLM.from_env(run_id=initial.run_id, icp_id=initial.icp_id)
     store = SireneStore()
     app = build_graph(llm=llm, store=store)
-
-    initial = RunState(nl_query=nl_query, started_at=datetime.now(tz=UTC))
     # Pregel.invoke returns a plain dict shaped like the state schema, not
     # the Pydantic instance — we coerce so downstream code can use attrs.
     final = RunState.model_validate(app.invoke(initial))

@@ -64,6 +64,7 @@ class FakeLLM:
         max_tokens: int = 256,
         temperature: float = 0.0,
         cache_system_prompt: bool = False,
+        agent_name: str | None = None,
     ) -> dict[str, Any]:
         siren = self._extract_siren(messages)
         self.call_count[siren] = self.call_count.get(siren, 0) + 1

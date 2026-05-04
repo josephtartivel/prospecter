@@ -8,6 +8,32 @@ The detailed write-ups live in `notes/NNNN-*.md`. This file is the index.
 
 ---
 
+## ADR-007 — Langfuse for LLM observability
+**Status:** Accepted · **Date:** 2026-05-03
+
+Every model call already flows through `llm.py`; that single chokepoint
+is the natural place to attach observability. We register Langfuse as a
+LiteLLM success/failure callback and forward `metadata` (trace id,
+session id, agent name, ICP id, tags) from the wrapper. Calls from one
+prospecter run share `RunState.run_id`, so the Langfuse UI groups them
+under a single trace with cost, latency, tokens, and the full
+prompt/response. `LANGFUSE_ENABLED=false` (or unset) skips registration
+entirely, leaving the wrapper byte-identical to a vanilla LiteLLM call —
+useful for offline runs and CI.
+
+We considered a hand-rolled file logger; it works but offers no UI, no
+diff between runs, and no group-by-trace. We considered Helicone, an
+HTTP proxy that sits on the request path — adding a network hop and a
+vendor dependency to every model call to gain only what a callback
+already gives us. We considered Arize Phoenix self-hosted; it has
+stronger eval features but is heavier to run and overkill for a
+single-laptop project. The Langfuse free tier (50k observations/month)
+covers ~30 ICPs × 50 candidates × 4 configs = 6k calls per full eval
+with margin. The integration is fifteen lines and disappears when
+disabled.
+
+---
+
 ## ADR-006 — LangGraph for orchestration
 **Status:** Accepted · **Date:** 2026-05-01
 

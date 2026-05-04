@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -137,6 +138,12 @@ class RunState(BaseModel):
     append-only.
     """
 
+    # Stable per-run identifier; surfaces as the Langfuse trace_id so all
+    # LLM calls of one prospecter run are grouped together in the UI.
+    run_id: str = Field(default_factory=lambda: uuid4().hex)
+    # Eval-only: set by the eval harness so Langfuse traces can be filtered
+    # to the specific labeled ICP. None for ad-hoc CLI runs.
+    icp_id: str | None = None
     nl_query: str
     icp: ICP | None = None
     candidates: list[Company] = Field(default_factory=list)

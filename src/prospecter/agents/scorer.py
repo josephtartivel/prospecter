@@ -120,6 +120,7 @@ async def _score_one(
             max_tokens=256,
             temperature=0.0,
             cache_system_prompt=True,
+            agent_name="scorer",
         )
         args = _extract_tool_call(response, TOOL_NAME)
         if args is None:
