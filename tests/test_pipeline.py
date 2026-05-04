@@ -133,6 +133,43 @@ def test_score_node_error_routes_to_end(monkeypatch, patched_parse):
     assert state.scores == []
 
 
+class TestCostWiring:
+    def test_run_aggregates_llm_cost_into_state(self, monkeypatch, tmp_path):
+        """``pipeline.run`` must surface ``llm.total_cost_usd`` into
+        ``state.cost_cents`` so the CLI banner and eval harness can read
+        the real cost. Without this wire the displayed cost is always 0."""
+        from prospecter import pipeline as pipeline_mod
+        from prospecter.llm import LLM, CallRecord
+
+        # Stub the agents inside the graph so the test stays unit-scoped:
+        # parse → fixed ICP, search → one company, score → one Score.
+        monkeypatch.setattr(graph_mod, "parse_icp", lambda nl, *, llm: _stub_icp())
+        monkeypatch.setattr(graph_mod, "search", lambda icp, *, store: [_stub_company()])
+
+        async def stub_score(icp, candidates, *, llm, trace=None):
+            return [Score(siren=c.siren, value=3, reason="ok", confidence=0.5) for c in candidates]
+
+        monkeypatch.setattr(graph_mod, "score_candidates", stub_score)
+
+        # LLM stub with two pre-recorded calls totalling $0.0042 = 0.42 cents.
+        stub_llm = LLM(primary_model="stub")
+        stub_llm.history.append(
+            CallRecord(model="stub", in_tokens=100, out_tokens=20, cost_usd=0.001, duration_ms=200)
+        )
+        stub_llm.history.append(
+            CallRecord(model="stub", in_tokens=200, out_tokens=30, cost_usd=0.0032, duration_ms=400)
+        )
+        monkeypatch.setattr(LLM, "from_env", classmethod(lambda cls, **kw: stub_llm))
+        # SireneStore is constructed but never queried (search is stubbed).
+        monkeypatch.setattr(pipeline_mod, "SireneStore", lambda: object())
+
+        leads, state = pipeline_mod.run("paris saas 10-49", output_dir=tmp_path)
+
+        assert leads, "expected at least one lead from the stubbed pipeline"
+        # 0.001 + 0.0032 = 0.0042 USD → 0.42 cents
+        assert state.cost_cents == pytest.approx(0.42, abs=1e-6)
+
+
 # --- gated end-to-end smoke test --------------------------------------------
 
 DATA_DIR = Path("data/sirene")

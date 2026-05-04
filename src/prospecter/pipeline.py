@@ -32,6 +32,10 @@ def run(
     # Pregel.invoke returns a plain dict shaped like the state schema, not
     # the Pydantic instance — we coerce so downstream code can use attrs.
     final = RunState.model_validate(app.invoke(initial))
+    # The graph nodes never touch ``cost_cents`` — the cost data lives on
+    # the LLM wrapper's history (one CallRecord per call). Aggregate it
+    # here so the CLI banner and the eval harness see the real number.
+    final.cost_cents = llm.total_cost_usd * 100
 
     leads = _build_leads(final, top_n=top_n)
     out_path = _write_csv(leads, output_dir=Path(output_dir), nl_query=nl_query)
