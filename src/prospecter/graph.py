@@ -25,7 +25,7 @@ from langgraph.graph import END, StateGraph
 
 from prospecter.agents.icp_parser import parse_icp
 from prospecter.agents.scorer import score_candidates
-from prospecter.agents.search import search
+from prospecter.agents.search import normalize_naf_code, search
 from prospecter.llm import LLM
 from prospecter.schemas import RunState, TraceEvent
 from prospecter.tools.duckdb_tool import SireneStore
@@ -123,10 +123,20 @@ def build_graph(*, llm: LLM, store: SireneStore):
                 )
             )
             return state
+        # The scorer must see the same NAF view that search used. Without
+        # this, a parser output of ``10.71Z`` (NACE Rev2 contamination —
+        # see ADR-009) reaches the scorer verbatim, and the model's
+        # ``reason`` field reads "NAF 10.71C not in ICP set {10.71Z}"
+        # even when the candidate is a perfect fit. We pass a copy with
+        # NAFs normalised; ``state.icp`` keeps the parser's raw output
+        # so the trace still shows what Mistral actually produced.
+        scoring_icp = state.icp.model_copy(
+            update={"naf_codes": [normalize_naf_code(c) for c in state.icp.naf_codes]}
+        )
         try:
             scores = asyncio.run(
                 score_candidates(
-                    state.icp,
+                    scoring_icp,
                     state.candidates,
                     llm=llm,
                     trace=state.trace,

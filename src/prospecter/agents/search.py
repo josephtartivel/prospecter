@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 _NACE_Z = re.compile(r"^\d{2}\.\d{2}Z$")
 
 
-def _normalize_naf_code(code: str) -> str:
+def normalize_naf_code(code: str) -> str:
     """Rewrite a ``XX.XXZ`` code to its 5-char prefix.
 
     ``Z`` in this position is ambiguous: legitimate monolithic NAF
@@ -92,7 +92,7 @@ def _build_where(icp: ICP) -> tuple[list[str], dict[str, object]]:
     params: dict[str, object] = {}
 
     if icp.naf_codes:
-        normalized = [_normalize_naf_code(c) for c in icp.naf_codes]
+        normalized = [normalize_naf_code(c) for c in icp.naf_codes]
         clauses.append(_prefix_or_clause("naf_code", normalized, params, "naf_p"))
 
     # Tranche overlap: tranche.max >= icp.min AND tranche.min <= icp.max.

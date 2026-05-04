@@ -204,7 +204,7 @@ async def score_candidates(
         return []
 
     prompts = prompts or PromptLibrary()
-    system = prompts.load("scorer", version=1)
+    system = prompts.load("scorer", version=2)
     chosen_model = model or os.environ.get("PROSPECTER_MODEL_SCORER", "claude-haiku-4-5")
     sem = asyncio.Semaphore(concurrency)
 
