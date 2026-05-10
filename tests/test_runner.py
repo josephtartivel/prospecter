@@ -154,6 +154,10 @@ def test_runner_writes_report_with_stub_pipeline(tmp_path: Path, monkeypatch: py
     import prospecter.pipeline as _pipeline_mod
 
     monkeypatch.setattr(_pipeline_mod, "run", stub_run)
+    # The runner now calls `load_dotenv()` at entry to pick up API keys
+    # from `.env`. Stub it here so the developer's local `.env` can't
+    # leak `PROSPECTER_MODEL_*` back into the scoped-env assertions below.
+    monkeypatch.setattr(runner_mod, "load_dotenv", lambda *a, **kw: False)
     # Make sure prior process state can't shadow the scoped mutation.
     monkeypatch.delenv("PROSPECTER_MODEL_PARSER", raising=False)
     monkeypatch.delenv("PROSPECTER_MODEL_SCORER", raising=False)

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
@@ -259,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default=None, help="Output directory (default: eval/reports).")
     p.add_argument("--log", default="INFO")
     args = p.parse_args(argv)
+
+    # The CLI loads dotenv at its entry; the runner is a separate entry
+    # point so it has to do it explicitly, otherwise model API keys in
+    # `.env` never reach `os.environ` and every call 401s.
+    load_dotenv()
 
     logging.basicConfig(
         level=args.log.upper(),
