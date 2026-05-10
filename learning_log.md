@@ -6,6 +6,74 @@ Newer entries on top. Use this to consolidate weekly and to feed
 
 ---
 
+## 2026-05-10 — Session 7: Cache-savings experiment ruled out (wrong provider)
+
+**What I implemented**: nothing of substance. Tried to measure prompt-cache
+savings (cold vs warm Anthropic ephemeral cache) and quote a delta in the
+README. Caught early that the premise didn't hold for the active provider.
+Single artifact shipped: a one-line baseline cost note in README under
+`## Eval` (commit `69899bc`): `$0.0022 / ICP` on Mistral, `icp-001`,
+`top_n=50`.
+
+**Patterns named today**:
+- *Provider-specific prompt-cache mechanics* — Anthropic's
+  `cache_control: {type: ephemeral}` syntax is Anthropic-only.
+  LiteLLM forwards it for Anthropic-flavoured models and silently drops
+  it for everything else. Mistral La Plateforme does prefix-cache
+  server-side but doesn't expose a separate cache-read price in the
+  response, so `_hidden_params["response_cost"]` shows the same number
+  cold and warm — there is no delta to quote. OpenAI prompt caching
+  is yet a third mechanism with its own discount visibility.
+- *Read the docstring before running the experiment* — `llm.py:127-129`
+  says verbatim "no-op on non-Anthropic providers". Ten seconds of
+  reading would have killed the wrong experiment before any code
+  changes.
+
+**Subtleties surfaced**:
+- `eval/runner.py` does not call `load_dotenv()` — only `cli.py` does.
+  Running `uv run python -m eval.runner` from a fresh shell yields an
+  `AuthenticationError` because `ANTHROPIC_API_KEY` (or whichever) is
+  in `.env` and never reaches `os.environ`. The CLI path sidesteps it
+  by loading dotenv at the entry. Worth a one-line fix later.
+- The eval runner has no single-ICP flag. For one-off probes, prefer
+  reusing `prospecter run "<nl>"` (which already prints
+  `cost ≈ $X.XXXX` from `state.cost_cents`) over adding a `--limit`
+  flag to the runner. Fewer moving parts; the CLI is the right tool
+  for ad-hoc cost questions.
+- The `cost_cents` field on `RunState` is the canonical aggregate;
+  `state.cost_cents / 100` rounded to 4 decimals gives the README-grade
+  number. No need to re-traverse `LLM.history`.
+
+**Senior signal of the session**: stopped a wrong experiment before
+spending API credit on it. The earlier turn proposed running the eval
+twice on Sonnet to measure ~57% cache savings — convincing-sounding,
+but the active provider is Mistral, where the saving doesn't exist
+on the wire. Reverted three premature edits to `eval/runner.py`
+(`--limit`, `load_dotenv`, the slicing) when scope shrank back to a
+single CLI probe.
+
+**Suggested follow-up questions for next session**:
+- Should `cache_system_prompt=True` raise or log a warning when called
+  with a non-Anthropic model, instead of silently no-op'ing? Trade-off:
+  explicit vs ergonomic for the model-swap eval matrix where the same
+  call site sees Anthropic, Mistral and OpenAI in turn.
+- Mistral does prefix-cache server-side. Does it actually show up as a
+  bill-side discount even when `_hidden_params["response_cost"]` ignores
+  it? Worth checking the next La Plateforme invoice against the sum of
+  per-call `cost_usd` — if they diverge, the eval cost numbers are
+  pessimistic by some constant factor.
+
+**Open scope notes**:
+- `eval/runner.py` lacks `load_dotenv()` — left as-is today since the
+  CLI path covered the immediate need, but anyone running the runner
+  from a non-shell-exporting environment will hit the same
+  `AuthenticationError` I did. Three-line fix when next touching the
+  runner.
+- `/tmp/__nonexistent_dryrun__/` was created during the false-start
+  before auth failed; harmless.
+
+---
+
 ## 2026-05-10 — Session 6: Eval runner + cost-path test gap
 
 **What I implemented**:
