@@ -191,7 +191,7 @@ async def score_candidates(
     llm: LLM,
     prompts: PromptLibrary | None = None,
     model: str | None = None,
-    concurrency: int = 8,
+    concurrency: int | None = None,
     trace: list[TraceEvent] | None = None,
 ) -> list[Score]:
     """Score every candidate in parallel; return scores in input order.
@@ -206,6 +206,11 @@ async def score_candidates(
     prompts = prompts or PromptLibrary()
     system = prompts.load("scorer", version=2)
     chosen_model = model or os.environ.get("PROSPECTER_MODEL_SCORER", "claude-haiku-4-5")
+    # Caller wins; otherwise honour PROSPECTER_CONCURRENCY so the eval
+    # harness can ablate per config without threading the value through
+    # graph→pipeline. Falls back to 8 to match the previous default.
+    if concurrency is None:
+        concurrency = int(os.environ.get("PROSPECTER_CONCURRENCY", "8"))
     sem = asyncio.Semaphore(concurrency)
 
     async def _bounded(c: Company) -> Score | None:
