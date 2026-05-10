@@ -52,6 +52,8 @@ latency. Labeling protocol in `eval/README.md`.
 uv run python -m eval.runner --configs eval/configs/*.yaml
 ```
 
+Baseline cost on Mistral (`icp-001`, top_n=50, parse + score): **$0.0022 / ICP**.
+
 ## Observability
 
 Every LLM call is captured by Langfuse with cost, latency, token counts,
