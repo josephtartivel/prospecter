@@ -6,6 +6,112 @@ Newer entries on top. Use this to consolidate weekly and to feed
 
 ---
 
+## 2026-05-10 — Session 6: Eval runner + cost-path test gap
+
+**What I implemented**:
+1. `eval/runner.py` end-to-end (commit `755464a`): per-(config × ICP)
+   loop, scoped env mutation via context manager, JSON report per
+   config, `latest.json` symlink (with copy fallback), Rich summary
+   table. Lazy import of `prospecter.pipeline` inside `_run_one_icp`
+   to dodge a collection-time test interaction.
+2. `feat(scorer)` (commit `43bf204`): `score_candidates` now reads
+   `PROSPECTER_CONCURRENCY` env var when caller doesn't pass the
+   `concurrency=` kwarg. Matches the eval-config knob without
+   threading a value through `pipeline.run` → `build_graph`.
+3. `test(llm)` (commit `ae46b6a`): three tests covering `LLM.call`'s
+   cost extraction by stubbing `litellm_completion` at the module
+   boundary, not pre-loading `CallRecord` objects. Covers the gap I
+   correctly identified: `TestCostWiring` was a false sense of
+   security since it bypassed the parsing code entirely.
+
+**Patterns named today**:
+- *Stubbing at the external boundary, not the internal wrapper* — the
+  difference between `monkeypatch.setattr(LLM, "from_env", ...)` and
+  `monkeypatch.setattr(llm_mod, "litellm_completion", ...)` is the
+  difference between "we exercise our copy of the contract" and "we
+  exercise our parsing of the contract". The first only catches
+  consumer-side bugs; the second also catches "did LiteLLM rename a
+  field". Pick the layer one below the code you want to verify.
+- *Scoped environment mutation via context manager* — `_scoped_env`
+  saves prior values, applies updates, yields, restores in
+  `finally`. The restore-on-crash branch is what makes this honest;
+  without it, a config that crashes mid-run leaves
+  `PROSPECTER_MODEL_*` polluted for the next config in the matrix
+  and for any pytest run sharing the process.
+- *Lazy import as collection-time workaround* — `from prospecter
+  import pipeline` at module top of `eval/runner.py` triggered
+  `prospecter.pipeline` import during pytest collection of
+  `test_runner.py`, which froze a stale `LLM` symbol that
+  `tests/test_llm.py`'s `importlib.reload` later invalidated. Lazy
+  import sidesteps the chain. The right long-term fix is in the
+  test (`monkeypatch.setattr` instead of `reload`), not in
+  production code; the lazy import is a workaround with a comment
+  pointing at the real cause.
+- *Diagnose before fixing* — the bug report ("cost ≈ $0.0000 despite
+  50 scored") didn't reproduce after rebuilding the venv. A probe
+  call against Mistral showed `_hidden_params["response_cost"]`
+  populated correctly; a probe through the full pipeline showed
+  `state.cost_cents` reflecting real spend; a real `prospecter run`
+  showed `$0.0014`. The "fix" was therefore not a code change but a
+  test-coverage strengthening to prevent the *real* gap (parsing
+  layer untested) from biting later.
+
+**Subtleties surfaced**:
+- *iCloud Drive corrupts Python venvs* — symptoms seen today:
+  duplicate `tiktoken_ext/openai_public 2.py` (broke `import
+  litellm` with "Duplicate encoding name gpt2"), duplicate `tests/
+  test_runner 2.py` collected by pytest, `.git/refs/remotes/origin/
+  main 2.lock` floating around, editable install losing its module
+  reference periodically. The " 2" suffix is iCloud's conflict-
+  resolution scheme. Fix: exclude `~/Documents/Projects/` from
+  iCloud Drive at the system level. Workaround: `rm -rf .venv && uv
+  sync --all-extras && uv pip install -e . --reinstall`. Took 30+
+  minutes today before I pinpointed it; should be the *first*
+  hypothesis next time `import prospecter` fails out of nowhere.
+- *`asyncio.run` inside a sync LangGraph node* — `score_node` wraps
+  `asyncio.run(score_candidates(...))` because LangGraph 1.x sync
+  mode forbids async nodes (Session 3 lesson). The `to_thread` for
+  `llm.call` inside `score_candidates` schedules sync work on the
+  default thread pool *of that one event loop*. List append on
+  `llm.history` is GIL-safe across those threads, so cost
+  accumulation is reliable — but easy to second-guess.
+- *Stale `.pyc` after editable-install corruption* — when iCloud
+  damages the editable install, Python may still execute cached
+  bytecode for *part* of the package while reporting `ModuleNotFound`
+  for *other* parts. That can produce the appearance of a real
+  behaviour bug (cost = 0) when the actual pipeline.py wire is
+  correct in source. Always rebuild the venv before believing a
+  reproducible-looking bug after any kind of environment damage.
+
+**Senior signal of the session** — pushed back on a "fix the cost
+bug" framing when the bug didn't reproduce, instead of busy-fixing
+something. The reported $0.0000 was a stale-`.pyc` artefact; the
+real gap was the test that *would* have caught it if it had
+existed. Strengthening the test was the honest output, not a code
+patch that didn't address anything reproducible.
+
+**Open questions for next session**:
+- The top-of-module workaround comment in `eval/runner.py` should
+  go away once `tests/test_llm.py` stops calling `importlib.reload`.
+  Is `monkeypatch.setattr(litellm, "success_callback", [])` enough
+  to test the opt-in semantics, or does the module-import-time
+  guard need a different angle?
+- `int(os.environ.get("PROSPECTER_CONCURRENCY", "8"))` raises on
+  non-numeric input. Should the runner validate at config-load
+  time, or should the scorer fall back to 8 with `log.warning`?
+  Validation at the boundary feels right; needs a unit test on
+  `_config_env_updates` if so.
+
+**Open scope notes**:
+- `eval/runner.py:130-131` has redundant `if predicted else 0.0`
+  guards around `precision_at_k`/`ndcg_at_k` — those functions
+  already return 0.0 on empty input. Dead code, drop next pass.
+- `report["config"] = cfg` dumps the entire YAML wholesale. Future
+  YAML fields the runner doesn't consume will leak into reports.
+  Filter or document.
+
+---
+
 ## 2026-05-04 — Session 5: Search-side prefix expansion (NAF + postal)
 
 **What I implemented** (three commits — one architectural surface):
